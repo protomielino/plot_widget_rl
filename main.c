@@ -71,6 +71,9 @@ series_t *series = NULL;
 static inline double lerp(double a, double b, double t) { return a + (b - a) * t; }
 static inline double clamp_double(double v, double a, double b) { return v < a ? a : (v > b ? b : v); }
 
+static inline bool mod_shift(void) { return IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT); }
+static inline bool mod_ctrl(void)  { return IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL); }
+
 static Vector2 world_to_screen(const plotWidget *w, double wx, double wy)
 {
     double sx = (wx - w->xmin) / (w->xmax - w->xmin) * w->viewport_px.width + w->viewport_px.x;
@@ -435,7 +438,7 @@ static void draw_series(const plotWidget *w, const series_t *s)
 // handle inputs: pan & zoom
 static void handle_input(plotWidget *w)
 {
-    // Pan with middle mouse drag
+    // Pan with middle mouse drag, with axis modifiers
     Vector2 mpos = GetMousePosition();
     if (IsMouseButtonPressed(MOUSE_MIDDLE_BUTTON)) {
         w->dragging = true;
@@ -447,29 +450,61 @@ static void handle_input(plotWidget *w)
     if (w->dragging) {
         Vector2 d = Vector2Subtract(mpos, w->last_mouse);
         w->last_mouse = mpos;
-        double dx = -d.x / w->viewport_px.width * (w->xmax - w->xmin);
-        double dy = d.y / w->viewport_px.height * (w->ymax - w->ymin);
-        w->xmin += dx; w->xmax += dx;
-        w->ymin += dy; w->ymax += dy;
+
+        // world del delta (full)
+        double dx_full = -d.x / w->viewport_px.width * (w->xmax - w->xmin);
+        double dy_full =  d.y / w->viewport_px.height * (w->ymax - w->ymin);
+
+        bool shift = mod_shift();
+        bool ctrl  = mod_ctrl();
+
+        if (shift && !ctrl) {
+            // Shift -> pan only X
+            w->xmin += dx_full; w->xmax += dx_full;
+        } else if (ctrl && !shift) {
+            // Ctrl -> pan only Y
+            w->ymin += dy_full; w->ymax += dy_full;
+        } else {
+            // No modifier or both -> pan both axes
+            w->xmin += dx_full; w->xmax += dx_full;
+            w->ymin += dy_full; w->ymax += dy_full;
+        }
     }
 
-    // Zoom with mouse wheel centered on mouse
+    // Zoom with mouse wheel centered on mouse, with axis modifiers
     float wheel = GetMouseWheelMove();
     if (wheel != 0.0f) {
         Vector2 mouse = GetMousePosition();
         if (mouse.x >= w->viewport_px.x && mouse.x <= w->viewport_px.x + w->viewport_px.width &&
             mouse.y >= w->viewport_px.y && mouse.y <= w->viewport_px.y + w->viewport_px.height) {
+
             double mx, my;
             screen_to_world(w, mouse.x, mouse.y, &mx, &my);
             double k = pow(1.15, -wheel);
-            double nxmin = mx + (w->xmin - mx) * k;
-            double nxmax = mx + (w->xmax - mx) * k;
-            double nymin = my + (w->ymin - my) * k;
-            double nymax = my + (w->ymax - my) * k;
-            // avoid degenerate
-            if (nxmax - nxmin > 1e-6 && nymax - nymin > 1e-6) {
-                w->xmin = nxmin; w->xmax = nxmax;
-                w->ymin = nymin; w->ymax = nymax;
+
+            bool shift = mod_shift();
+            bool ctrl  = mod_ctrl();
+
+            if (shift && !ctrl) {
+                // Shift -> zoom only X (change xmin/xmax around mx)
+                double nxmin = mx + (w->xmin - mx) * k;
+                double nxmax = mx + (w->xmax - mx) * k;
+                if (nxmax - nxmin > 1e-12) { w->xmin = nxmin; w->xmax = nxmax; }
+            } else if (ctrl && !shift) {
+                // Ctrl -> zoom only Y (change ymin/ymax around my)
+                double nymin = my + (w->ymin - my) * k;
+                double nymax = my + (w->ymax - my) * k;
+                if (nymax - nymin > 1e-12) { w->ymin = nymin; w->ymax = nymax; }
+            } else {
+                // No modifier or both -> zoom both axes
+                double nxmin = mx + (w->xmin - mx) * k;
+                double nxmax = mx + (w->xmax - mx) * k;
+                double nymin = my + (w->ymin - my) * k;
+                double nymax = my + (w->ymax - my) * k;
+                if (nxmax - nxmin > 1e-12 && nymax - nymin > 1e-12) {
+                    w->xmin = nxmin; w->xmax = nxmax;
+                    w->ymin = nymin; w->ymax = nymax;
+                }
             }
         }
     }
@@ -678,11 +713,14 @@ int main(void)
     SetTargetFPS(60);
 
     // widget initialization
-    plotWidget widget;
-    widget.viewport_px = (Rectangle){ 60, 40, screenW - 120.0f, screenH - 100.0f };
-    widget.xmin = -10.0; widget.xmax = 10.0;
-    widget.ymin = -3.0; widget.ymax = 3.0;
-    widget.dragging = false;
+    plotWidget widget = {
+            viewport_px: (Rectangle){ 100, 100, screenW - 220.0f, screenH - 200.0f },
+            xmin:    -10.0,
+            xmax:     10.0,
+            ymin:    -3.0,
+            ymax:     3.0,
+            dragging: false
+    };
 
     // create series
     size_t n1, n2, n3;
@@ -693,20 +731,11 @@ int main(void)
     nseries = 3;
     series = (series_t*)malloc(sizeof(series_t) * nseries);
 
-    series[0].pts = pts1; 
-    series[0].n = n1; 
-    series[0].color = RED; 
-    series[0].visible = true; 
+    series[0] = (series_t) { pts: pts1, n: n1, color: RED, visible: true };
     strncpy(series[0].name, "Noisy sin", sizeof(series[0].name)-1);
-    series[1].pts = pts2; 
-    series[1].n = n2; 
-    series[1].color = BLUE; 
-    series[1].visible = true; 
+    series[1] = (series_t) { pts: pts2, n: n2, color: BLUE, visible: true };
     strncpy(series[1].name, "Cos w/ gap", sizeof(series[1].name)-1);
-    series[2].pts = pts3; 
-    series[2].n = n3; 
-    series[2].color = YELLOW; 
-    series[2].visible = true; 
+    series[2] = (series_t) { pts: pts3, n: n3, color: YELLOW, visible: true };
     strncpy(series[2].name, "Linear", sizeof(series[2].name)-1);
 
     // main loop
@@ -730,9 +759,9 @@ int main(void)
             int sy = (int)fmax(0, floor(widget.viewport_px.y));
             int sw = (int)fmax(0, ceil(widget.viewport_px.width));
             int sh = (int)fmax(0, ceil(widget.viewport_px.height));
-            BeginScissorMode(sx, sy, sw, sh); {
-                draw_adaptive_curve(&widget, widget.xmin, widget.xmax);
-            } EndScissorMode();
+//            BeginScissorMode(sx, sy, sw, sh); {
+//                draw_adaptive_curve(&widget, widget.xmin, widget.xmax);
+//            } EndScissorMode();
 
             // Frame and title
             draw_widget_frame(&widget, "Example: multi-series plot (click legend to toggle)");
@@ -823,8 +852,8 @@ int main(void)
                         series_t *s = &series[g_selection.series_idx];
                         Vector2 sp = world_to_screen(&widget, g_selection.pt.x, g_selection.pt.y);
                         // cerchio di evidenziazione (fuori scissor per visibilità) o dentro viewport
-                        DrawCircleV(sp, 6, WHITE);
-                        DrawCircleV(sp, 4, s->color);
+                        DrawCircleV(sp, 4, WHITE);
+                        DrawCircleV(sp, 3, s->color);
                         // testo info vicino al punto (box)
                         char sbuf[128];
                         snprintf(sbuf, sizeof(sbuf), "%s\nx=%.6g\ny=%.6g", s->name, g_selection.pt.x, g_selection.pt.y);
@@ -841,8 +870,16 @@ int main(void)
                 draw_mouse_tooltip(&widget, series, nseries, mpos);
             } EndScissorMode();
 
+            if (IsMouseButtonDown(MOUSE_MIDDLE_BUTTON)) {
+                char lab[64] = {0};
+                if (mod_shift() && !mod_ctrl()) snprintf(lab, sizeof(lab), "Pan: X only");
+                else if (mod_ctrl() && !mod_shift()) snprintf(lab, sizeof(lab), "Pan: Y only");
+                else snprintf(lab, sizeof(lab), "Pan: XY");
+                DrawText(lab, (int)widget.viewport_px.x + 8, (int)widget.viewport_px.y + 8, 10, DARKGRAY);
+            }
+
             // instructions
-            DrawText("Pan: Middle mouse drag    Zoom: Mouse wheel    Reset: R", 10, 10, 12, DARKGRAY);
+            DrawText("Pan: Middle drag (Shift: X only, Ctrl: Y only)  Zoom: Wheel (Shift: X only, Ctrl: Y only)", 8, 8, 12, DARKGRAY);
 
         } EndDrawing();
     }
