@@ -44,13 +44,19 @@ inhibition-induced spiking/bursting.
 ## Dependencies
 
 - [raylib](https://www.raylib.com/) (>= 4.0)
-- [stb_ds.h](https://github.com/nothings/stb) (dynamic arrays) — bundled or system-installed
 - C99 compiler (gcc, clang)
 
 ## Build
 
 ```sh
 make
+```
+
+## Source files
+
+- `main.c` — program entry point, widget setup, main loop
+- `plot_widget.h` / `plot_widget.c` — reusable plot widget types and rendering
+- `izhikevich.h` / `izhikevich.c` — Izhikevich neuron model generators
 ```
 
 ## Run
