@@ -32,10 +32,11 @@ typedef struct
 // stato selezione/tooltip (inserire in cima file, es. dopo typedefs)
 typedef struct
 {
-    bool active;          // true se un punto è selezionato
-    size_t series_idx;    // indice della serie selezionata
-    size_t pt_idx;        // indice del punto selezionato nella serie
-    pointD pt;            // coordinate world del punto selezionato
+    bool active;
+    size_t widget_idx;    // quale widget ha la selezione
+    size_t series_idx;
+    size_t pt_idx;
+    pointD pt;
 } selection_t;
 
 static selection_t g_selection = {};
@@ -43,10 +44,11 @@ static selection_t g_selection = {};
 // area selection state
 typedef struct
 {
-    bool active;        // true mentre l'utente sta trascinando l'area
-    bool finished;      // true se una area è stata selezionata (oltre al drag in corso)
-    Vector2 start_px;   // corner iniziale in screen coords
-    Vector2 end_px;     // corner corrente/finale in screen coords
+    bool active;
+    bool finished;
+    size_t widget_idx;    // quale widget ha iniziato l'area
+    Vector2 start_px;
+    Vector2 end_px;
 } area_sel_t;
 
 static area_sel_t g_area = {};
@@ -54,7 +56,7 @@ static area_sel_t g_area = {};
 typedef struct
 {
     bool has_any;
-    // per semplicità memorizziamo un array dinamico di (series_idx, pt_idx)
+    size_t widget_idx;    // quale widget ha la multi-selezione
     size_t *series_idx;
     size_t *pt_idx;
     size_t count;
@@ -334,9 +336,9 @@ static void draw_grid_and_ticks(const plot_widget_t *w)
     double xstep = nice_tick_step(xrange, target_xticks);
     double ystep = nice_tick_step(yrange, target_yticks);
 
-    // find first tick >= xmin
-    double startx = ceil(w->xmin / xstep) * xstep;
-    double starty = ceil(w->ymin / ystep) * ystep;
+    // find first tick >= xmin (with epsilon to avoid floating-point misalignment)
+    double startx = ceil(w->xmin / xstep - 1e-12) * xstep;
+    double starty = ceil(w->ymin / ystep - 1e-12) * ystep;
 
     // colors
     Color grid_col = (Color){200,200,200,80};
@@ -407,15 +409,7 @@ static void draw_grid_and_ticks(const plot_widget_t *w)
         for (double tx = startx; tx <= w->xmax + 1e-12; tx += xstep) {
             Vector2 s0 = world_to_screen(w, tx, w->ymin);
             char buf[64];
-            if (fabs(tx) < 1e-3 || fabs(tx) > 1e4) {
-                snprintf(buf, sizeof(buf), "%.3g", tx);
-            } else {
-                // scegli precisione in base a xstep
-                int prec = (int)ceil(-floor(log10(xstep)));
-                if (prec < 0) prec = 0;
-                char fmt[16]; snprintf(fmt, sizeof(fmt), "%%.%df", prec);
-                snprintf(buf, sizeof(buf), fmt, tx);
-            }
+            snprintf(buf, sizeof(buf), "%.4g", tx);
             Vector2 lblpos = (Vector2){ s0.x - MeasureText(buf, 10) / 2.0f, w->viewport_px.y + w->viewport_px.height };
             DrawText(buf, (int)lblpos.x, (int)lblpos.y, 10, label_col);
         }
@@ -423,14 +417,7 @@ static void draw_grid_and_ticks(const plot_widget_t *w)
         for (double ty = starty; ty <= w->ymax + 1e-12; ty += ystep) {
             Vector2 s0 = world_to_screen(w, w->xmin, ty);
             char buf[64];
-            if (fabs(ty) < 1e-3 || fabs(ty) > 1e4) {
-                snprintf(buf, sizeof(buf), "%.3g", ty);
-            } else {
-                int prec = (int)ceil(-floor(log10(ystep)));
-                if (prec < 0) prec = 0;
-                char fmt[16]; snprintf(fmt, sizeof(fmt), "%%.%df", prec);
-                snprintf(buf, sizeof(buf), fmt, ty);
-            }
+            snprintf(buf, sizeof(buf), "%.4g", ty);
             Vector2 lblpos = (Vector2){ w->viewport_px.x - MeasureText(buf, 10), s0.y - 8 };
             DrawText(buf, (int)lblpos.x, (int)lblpos.y, 10, label_col);
         }
@@ -489,11 +476,13 @@ void get_series_ranges(const series_t *s, int ns, double *xmin, double *xmax, do
 }
 
 // handle inputs: pan & zoom
-static void handle_input(plot_widget_t *w)
+static void handle_input(plot_widget_t *w, int w_idx)
 {
-    // Pan with middle mouse drag, with axis modifiers
     Vector2 mpos = GetMousePosition();
-    if (IsMouseButtonPressed(MOUSE_MIDDLE_BUTTON)) {
+    bool inside = CheckCollisionPointRec(mpos, w->viewport_px);
+
+    // Pan with middle mouse drag, with axis modifiers
+    if (IsMouseButtonPressed(MOUSE_MIDDLE_BUTTON) && inside) {
         w->dragging = true;
         w->last_mouse = mpos;
     }
@@ -526,60 +515,48 @@ static void handle_input(plot_widget_t *w)
 
     // Zoom with mouse wheel centered on mouse, with axis modifiers
     float wheel = GetMouseWheelMove();
-    if (wheel != 0.0f) {
-        Vector2 mouse = GetMousePosition();
-        if (mouse.x >= w->viewport_px.x && mouse.x <= w->viewport_px.x + w->viewport_px.width &&
-            mouse.y >= w->viewport_px.y && mouse.y <= w->viewport_px.y + w->viewport_px.height) {
+    if (wheel != 0.0f && inside) {
+        double mx, my;
+        screen_to_world(w, mpos.x, mpos.y, &mx, &my);
+        double k = pow(1.15, -wheel);
 
-            double mx, my;
-            screen_to_world(w, mouse.x, mouse.y, &mx, &my);
-            double k = pow(1.15, -wheel);
+        bool shift = mod_shift();
+        bool ctrl  = mod_ctrl();
 
-            bool shift = mod_shift();
-            bool ctrl  = mod_ctrl();
-
-            if (shift && !ctrl) {
-                // Shift -> zoom only X (change xmin/xmax around mx)
-                double nxmin = mx + (w->xmin - mx) * k;
-                double nxmax = mx + (w->xmax - mx) * k;
-                if (nxmax - nxmin > 1e-12) {
-                    w->xmin = nxmin; w->xmax = nxmax;
-                }
-            } else if (ctrl && !shift) {
-                // Ctrl -> zoom only Y (change ymin/ymax around my)
-                double nymin = my + (w->ymin - my) * k;
-                double nymax = my + (w->ymax - my) * k;
-                if (nymax - nymin > 1e-12) {
-                    w->ymin = nymin; w->ymax = nymax;
-                }
-            } else {
-                // No modifier or both -> zoom both axes
-                double nxmin = mx + (w->xmin - mx) * k;
-                double nxmax = mx + (w->xmax - mx) * k;
-                double nymin = my + (w->ymin - my) * k;
-                double nymax = my + (w->ymax - my) * k;
-                if (nxmax - nxmin > 1e-12 && nymax - nymin > 1e-12) {
-                    w->xmin = nxmin; w->xmax = nxmax;
-                    w->ymin = nymin; w->ymax = nymax;
-                }
+        if (shift && !ctrl) {
+            double nxmin = mx + (w->xmin - mx) * k;
+            double nxmax = mx + (w->xmax - mx) * k;
+            if (nxmax - nxmin > 1e-12) {
+                w->xmin = nxmin; w->xmax = nxmax;
+            }
+        } else if (ctrl && !shift) {
+            double nymin = my + (w->ymin - my) * k;
+            double nymax = my + (w->ymax - my) * k;
+            if (nymax - nymin > 1e-12) {
+                w->ymin = nymin; w->ymax = nymax;
+            }
+        } else {
+            double nxmin = mx + (w->xmin - mx) * k;
+            double nxmax = mx + (w->xmax - mx) * k;
+            double nymin = my + (w->ymin - my) * k;
+            double nymax = my + (w->ymax - my) * k;
+            if (nxmax - nxmin > 1e-12 && nymax - nymin > 1e-12) {
+                w->xmin = nxmin; w->xmax = nxmax;
+                w->ymin = nymin; w->ymax = nymax;
             }
         }
     }
 
     // Area selection: Left mouse drag inside viewport
-    mpos = GetMousePosition();
-    bool inside = (mpos.x >= w->viewport_px.x &&
-                   mpos.x <= w->viewport_px.x + w->viewport_px.width &&
-                   mpos.y >= w->viewport_px.y &&
-                   mpos.y <= w->viewport_px.y + w->viewport_px.height);
-
     if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && inside) {
-        // start area drag: only if not clicking on legend (legend handler should run before)
         g_area.active = true;
         g_area.finished = false;
+        g_area.widget_idx = w_idx;
         g_area.start_px = mpos;
         g_area.end_px = mpos;
-        // clear single selection while starting area selection
+        g_multi.has_any = false;
+        g_multi.count = 0;
+        g_multi.widget_idx = w_idx;
         g_selection.active = false;
     }
 
@@ -587,60 +564,64 @@ static void handle_input(plot_widget_t *w)
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
             g_area.end_px = mpos;
         }
-        if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) {
+        if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON) && g_area.widget_idx == (size_t)w_idx) {
             g_area.active = false;
-            g_area.finished = true;
-            g_area.end_px = mpos;
-            // After finishing, compute selected points
-            // free previous
-            if (g_multi.series_idx) {
-                free(g_multi.series_idx);
-                g_multi.series_idx = NULL;
-            }
-            if (g_multi.pt_idx) {
-                free(g_multi.pt_idx);
-                g_multi.pt_idx = NULL;
-            }
-            g_multi.count = 0;
-            g_multi.has_any = false;
-
-            // compute world bounding box of selection
-            Rectangle srect = norm_rect_from_points(g_area.start_px, g_area.end_px);
-            double wxmin, wxmax, wymin, wymax;
-            rect_screen_to_world_box(w, srect, &wxmin, &wxmax, &wymin, &wymax);
-
-            // collect points inside the world bbox
-            // first pass count
-            for (size_t si = 0; si < w->nseries; ++si) {
-                if (!w->series[si].visible) continue;
-                for (size_t pi = 0; pi < w->series[si].n; ++pi) {
-                    pointD p = w->series[si].pts[pi];
-                    if (!isfinite(p.x) || !isfinite(p.y)) continue;
-                    if (p.x >= wxmin && p.x <= wxmax && p.y >= wymin && p.y <= wymax) {
-                        g_multi.count++;
-                    }
+            if (inside) {
+                g_area.finished = true;
+                g_area.end_px = mpos;
+                g_multi.widget_idx = w_idx;
+                // After finishing, compute selected points
+                // free previous
+                if (g_multi.series_idx) {
+                    free(g_multi.series_idx);
+                    g_multi.series_idx = NULL;
                 }
-            }
-            if (g_multi.count > 0) {
-                g_multi.series_idx = (size_t*)malloc(sizeof(size_t) * g_multi.count);
-                g_multi.pt_idx = (size_t*)malloc(sizeof(size_t) * g_multi.count);
-                size_t idx = 0;
+                if (g_multi.pt_idx) {
+                    free(g_multi.pt_idx);
+                    g_multi.pt_idx = NULL;
+                }
+                g_multi.count = 0;
+                g_multi.has_any = false;
+
+                // compute world bounding box of selection
+                Rectangle srect = norm_rect_from_points(g_area.start_px, g_area.end_px);
+                double wxmin, wxmax, wymin, wymax;
+                rect_screen_to_world_box(w, srect, &wxmin, &wxmax, &wymin, &wymax);
+
+                // collect points inside the world bbox
                 for (size_t si = 0; si < w->nseries; ++si) {
                     if (!w->series[si].visible) continue;
                     for (size_t pi = 0; pi < w->series[si].n; ++pi) {
                         pointD p = w->series[si].pts[pi];
-                        if (!isfinite(p.x) || !isfinite(p.y))
-                            continue;
+                        if (!isfinite(p.x) || !isfinite(p.y)) continue;
                         if (p.x >= wxmin && p.x <= wxmax && p.y >= wymin && p.y <= wymax) {
-                            g_multi.series_idx[idx] = si;
-                            g_multi.pt_idx[idx] = pi;
-                            idx++;
+                            g_multi.count++;
                         }
                     }
                 }
-                g_multi.has_any = true;
+                if (g_multi.count > 0) {
+                    g_multi.series_idx = (size_t*)malloc(sizeof(size_t) * g_multi.count);
+                    g_multi.pt_idx = (size_t*)malloc(sizeof(size_t) * g_multi.count);
+                    size_t idx = 0;
+                    for (size_t si = 0; si < w->nseries; ++si) {
+                        if (!w->series[si].visible) continue;
+                        for (size_t pi = 0; pi < w->series[si].n; ++pi) {
+                            pointD p = w->series[si].pts[pi];
+                            if (!isfinite(p.x) || !isfinite(p.y))
+                                continue;
+                            if (p.x >= wxmin && p.x <= wxmax && p.y >= wymin && p.y <= wymax) {
+                                g_multi.series_idx[idx] = si;
+                                g_multi.pt_idx[idx] = pi;
+                                idx++;
+                            }
+                        }
+                    }
+                    g_multi.has_any = true;
+                } else {
+                    g_multi.has_any = false;
+                }
             } else {
-                g_multi.has_any = false;
+                g_area.finished = false;
             }
         }
     }
@@ -651,22 +632,12 @@ static void handle_input(plot_widget_t *w)
         g_area.finished = false;
     }
 
-    // Reset view with R
-    if (IsKeyPressed(KEY_R)) {
+    // Reset view with R (only for hovered widget)
+    if (IsKeyPressed(KEY_R) && inside) {
         w->xmin = -10.0; w->xmax = 10.0;
         w->ymin =  -3.0; w->ymax =  3.0;
     }
 
-    // fill to series
-    if (IsKeyPressed(KEY_F)) {
-        double xmin, xmax;
-        double ymin, ymax;
-        get_series_ranges(w->series, w->nseries, &xmin, &xmax, &ymin, &ymax);
-        w->xmin = xmin - (xmax - xmin) * 0.05;
-        w->xmax = xmax + (xmax - xmin) * 0.05;
-        w->ymin = ymin - (ymax - ymin) * 0.05;
-        w->ymax = ymax + (ymax - ymin) * 0.05;
-    }
 }
 
 // draw widget's frame UI (frame, title)
@@ -3027,6 +2998,16 @@ int main(void)
 
     // main loop
     while (!WindowShouldClose()) {
+        // determine active widget (mouse hover)
+        Vector2 gpos = GetMousePosition();
+        int active_wi = -1;
+        for (int wi = 0; wi < arrlen(widgets); ++wi) {
+            if (CheckCollisionPointRec(gpos, widgets[wi].viewport_px)) {
+                active_wi = wi;
+                break;
+            }
+        }
+
         BeginDrawing(); {
             ClearBackground(BLACK);
 
@@ -3054,16 +3035,21 @@ int main(void)
                 // Frame and title
                 draw_widget_frame(&widgets[wi]);
 
+                // evidenzia widget attivo
+                if (wi == active_wi) {
+                    DrawRectangleLinesEx(widgets[wi].viewport_px, 2, (Color){255,255,100,160});
+                }
+
                 // disegna area di drag in corso (wireframe) - dentro lo schermo normale (no scissor necessario ma meglio limitare al viewport)
-                if (g_area.active) {
+                if (g_area.active && g_area.widget_idx == (size_t)wi) {
                     Rectangle r = norm_rect_from_points(g_area.start_px, g_area.end_px);
                     // draw semi-transparent fill
                     DrawRectangleRec(r, (Color){ 200, 200, 255, 60 });
                     DrawRectangleLines((int)r.x, (int)r.y, (int)r.width, (int)r.height, (Color){100,100,255,180});
                 }
 
-                // se area finished, evidenzia punti selezionati
-                if (g_area.finished && g_multi.has_any) {
+                // se area finished, evidenzia punti selezionati (solo sul widget giusto)
+                if (g_area.finished && g_multi.has_any && g_multi.widget_idx == (size_t)wi) {
                     // draw highlight circles for each selected point (clipped to viewport)
                     BeginScissorMode((int)widgets[wi].viewport_px.x, (int)widgets[wi].viewport_px.y, (int)widgets[wi].viewport_px.width, (int)widgets[wi].viewport_px.height);
                     for (size_t i = 0; i < g_multi.count; ++i) {
@@ -3104,7 +3090,7 @@ int main(void)
                 }
 
                 // input handling (pan/zoom)
-                handle_input(&widgets[wi]);
+                handle_input(&widgets[wi], wi);
 
                 Vector2 mpos = GetMousePosition();
                 const double pick_threshold_px = 8.0;
@@ -3113,19 +3099,16 @@ int main(void)
                 double found_d;
                 bool hit = find_nearest_point(&widgets[wi], widgets[wi].series, widgets[wi].nseries, mpos, pick_threshold_px, &found_si, &found_pi, &found_pt, &found_d);
 
-                // tooltip (transient) si disegna poi con draw_mouse_tooltip
-                // selection toggle on left click
-                if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-                    // se click dentro legend l'handler legend lo gestisce prima; quindi qui consideriamo solo viewport
-                    if (mpos.x >= widgets[wi].viewport_px.x && mpos.x <= widgets[wi].viewport_px.x + widgets[wi].viewport_px.width &&
-                            mpos.y >= widgets[wi].viewport_px.y && mpos.y <= widgets[wi].viewport_px.y + widgets[wi].viewport_px.height) {
+                // selection toggle on left click (solo widget attivo)
+                if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && wi == active_wi) {
+                    if (CheckCollisionPointRec(mpos, widgets[wi].viewport_px)) {
                         if (hit) {
                             g_selection.active = true;
+                            g_selection.widget_idx = wi;
                             g_selection.series_idx = found_si;
                             g_selection.pt_idx = found_pi;
                             g_selection.pt = found_pt;
                         } else {
-                            // click fuori da qualsivoglia punto annulla selezione
                             g_selection.active = false;
                         }
                     }
@@ -3135,9 +3118,8 @@ int main(void)
                     g_selection.active = false;
 
                 BeginScissorMode(sx, sy, sw, sh); {
-                    // evidenzia punto selezionato permanente
-                    if (g_selection.active) {
-                        // sicurezza: indice serie valido
+                    // evidenzia punto selezionato permanente (solo sul widget giusto)
+                    if (g_selection.active && g_selection.widget_idx == (size_t)wi) {
                         if (g_selection.series_idx < widgets[wi].nseries) {
                             series_t *s = &widgets[wi].series[g_selection.series_idx];
                             Vector2 sp = world_to_screen(&widgets[wi], g_selection.pt.x, g_selection.pt.y);
@@ -3168,9 +3150,31 @@ int main(void)
                     DrawText(lab, (int)widgets[wi].viewport_px.x + 8, (int)widgets[wi].viewport_px.y + 8, 10, DARKGRAY);
                 }
 
-                // instructions
-//                DrawText("Pan: Middle drag (Shift: X only, Ctrl: Y only)  Zoom: Wheel (Shift: X only, Ctrl: Y only)", 8, 8, 12, DARKGRAY);
             }
+
+            // 'f' = fill hovered widget; 'F' (Shift+f) = fill all widgets
+            if (IsKeyPressed(KEY_F)) {
+                if (mod_shift()) {
+                    // fill all
+                    for (int fi = 0; fi < arrlen(widgets); ++fi) {
+                        double xmin, xmax, ymin, ymax;
+                        get_series_ranges(widgets[fi].series, widgets[fi].nseries, &xmin, &xmax, &ymin, &ymax);
+                        widgets[fi].xmin = xmin - (xmax - xmin) * 0.05;
+                        widgets[fi].xmax = xmax + (xmax - xmin) * 0.05;
+                        widgets[fi].ymin = ymin - (ymax - ymin) * 0.05;
+                        widgets[fi].ymax = ymax + (ymax - ymin) * 0.05;
+                    }
+                } else if (active_wi >= 0) {
+                    // fill hovered widget only
+                    double xmin, xmax, ymin, ymax;
+                    get_series_ranges(widgets[active_wi].series, widgets[active_wi].nseries, &xmin, &xmax, &ymin, &ymax);
+                    widgets[active_wi].xmin = xmin - (xmax - xmin) * 0.05;
+                    widgets[active_wi].xmax = xmax + (xmax - xmin) * 0.05;
+                    widgets[active_wi].ymin = ymin - (ymax - ymin) * 0.05;
+                    widgets[active_wi].ymax = ymax + (ymax - ymin) * 0.05;
+                }
+            }
+
         } EndDrawing();
     }
 
