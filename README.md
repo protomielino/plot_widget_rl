@@ -25,6 +25,7 @@ Interactive 2D plot widget system built with [raylib](https://www.raylib.com/). 
 | Left-click drag | Area selection (multi-point) |
 | Q | Clear selection / cancel area drag |
 | R | Reset pan and zoom on the hovered widget |
+| Tab | Toggle fullscreen on the active widget |
 | f | Zoom-fill: auto-fit view to data on the hovered widget |
 | F (Shift+f) | Zoom-fill all widgets |
 

@@ -137,6 +137,8 @@ int main(void)
     /* ---------------------------------------------------------------- */
     /*  main loop                                                       */
     /* ---------------------------------------------------------------- */
+    int fullscreen_idx = -1;
+
     while (!WindowShouldClose()) {
         Vector2 gpos = GetMousePosition();
         int active_wi = -1;
@@ -151,6 +153,7 @@ int main(void)
             ClearBackground(BLACK);
 
             for (int wi = 0; wi < (int)widgets.count; ++wi) {
+                if (fullscreen_idx >= 0 && wi != fullscreen_idx) continue;
                 plot_widget_t *w = &widgets.items[wi];
 
                 /* background */
@@ -321,6 +324,20 @@ int main(void)
                 }
                 for (int fi = start; fi < end; ++fi)
                     auto_fit_view(&widgets.items[fi]);
+            }
+
+            /* TAB : toggle fullscreen on active widget */
+            if (IsKeyPressed(KEY_TAB)) {
+                if (fullscreen_idx >= 0) {
+                    for (int fi = 0; fi < (int)widgets.count; ++fi)
+                        widgets.items[fi].viewport_px = widgets.items[fi].saved_viewport;
+                    fullscreen_idx = -1;
+                } else if (active_wi >= 0) {
+                    for (int fi = 0; fi < (int)widgets.count; ++fi)
+                        widgets.items[fi].saved_viewport = widgets.items[fi].viewport_px;
+                    widgets.items[active_wi].viewport_px = (Rectangle){ 0, 0, screenW, screenH };
+                    fullscreen_idx = active_wi;
+                }
             }
 
         } EndDrawing();

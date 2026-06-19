@@ -63,6 +63,9 @@ typedef struct plot_widget_s {
     selection_t selection;
     area_sel_t area;
     multi_selection_t multi;
+
+    /* fullscreen toggle support: saved viewport before expanding to full window */
+    Rectangle saved_viewport;
 } plot_widget_t;
 
 /* utility inlines */
