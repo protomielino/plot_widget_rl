@@ -335,7 +335,9 @@ int main(void)
                 } else if (active_wi >= 0) {
                     for (int fi = 0; fi < (int)widgets.count; ++fi)
                         widgets.items[fi].saved_viewport = widgets.items[fi].viewport_px;
-                    widgets.items[active_wi].viewport_px = (Rectangle){ 0, 0, screenW, screenH };
+                    widgets.items[active_wi].viewport_px = (Rectangle){
+                        55, 25, screenW - 65, screenH - 42
+                    };
                     fullscreen_idx = active_wi;
                 }
             }
