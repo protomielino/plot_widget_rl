@@ -43,16 +43,16 @@ static void auto_fit_view(plot_widget_t *w)
 }
 
 /* ------------------------------------------------------------------ */
-/*  allocate 3 series (I, V, u) in a widget                            */
+/*  allocate 3 series in a widget                                      */
 /* ------------------------------------------------------------------ */
 static void assign_3_series(plot_widget_t *w, size_t n,
-                            pointD *i_arr, pointD *v_arr, pointD *u_arr)
+                            pointD *a_arr, pointD *b_arr, pointD *c_arr)
 {
     w->series = malloc(3 * sizeof(series_t));
     w->nseries = 3;
-    w->series[0] = (series_t){ .pts = i_arr, .n = n, .color = YELLOW, .visible = true, .name = "I" };
-    w->series[1] = (series_t){ .pts = v_arr, .n = n, .color = RED,    .visible = true, .name = "V" };
-    w->series[2] = (series_t){ .pts = u_arr, .n = n, .color = BLUE,   .visible = true, .name = "u" };
+    w->series[0] = (series_t){ .pts = a_arr, .n = n, .color = YELLOW, .visible = true, .name = "A" };
+    w->series[1] = (series_t){ .pts = b_arr, .n = n, .color = RED,    .visible = true, .name = "B" };
+    w->series[2] = (series_t){ .pts = c_arr, .n = n, .color = BLUE,   .visible = true, .name = "C" };
 }
 
 /* ------------------------------------------------------------------ */
@@ -68,7 +68,7 @@ static void add_widget(widget_arr_t *da, Rectangle vp, const char *title,
         .show_grid   = true,
         .show_ticks  = true,
         .show_labels = true,
-        .show_legend = false,
+        .show_legend = true,
         .dragging    = false,
         .title       = "",
         .series      = NULL,
@@ -98,46 +98,18 @@ int main(void)
     InitWindow(screenW, screenH, "Plot Widget - raylib");
     SetTargetFPS(60);
 
-    /* layout constants */
-    const float ww = 200, wh = 150;
-    const int bwx = 25, bwy = 25;
-    const int wsx = 25, wsy = 35;
-    const int dwx = ww + wsx, dwy = wh + wsy;
-
     widget_arr_t widgets = {0};
 
-    /* ---------- row 1 ---------- */
-    add_widget(&widgets, (Rectangle){ bwx + 0*dwx, bwy + 0*dwy, ww, wh }, "(A) tonic spiking",              generate_izk_tonic_spike);
-    add_widget(&widgets, (Rectangle){ bwx + 1*dwx, bwy + 0*dwy, ww, wh }, "(B) phasic spiking",             generate_izk_phasic_spike);
-    add_widget(&widgets, (Rectangle){ bwx + 2*dwx, bwy + 0*dwy, ww, wh }, "(C) tonic bursting",            generate_izk_tonic_bursting);
-    add_widget(&widgets, (Rectangle){ bwx + 3*dwx, bwy + 0*dwy, ww, wh }, "(D) phasic bursting",           generate_izk_phasic_bursting);
-    add_widget(&widgets, (Rectangle){ bwx + 4*dwx, bwy + 0*dwy, ww, wh }, "(E) mixed mode",                generate_izk_mixed_mode);
-
-    /* ---------- row 2 ---------- */
-    add_widget(&widgets, (Rectangle){ bwx + 0*dwx, bwy + 1*dwy, ww, wh }, "(F) spike freq. adapt",         generate_izk_spike_freq_adapt);
-    add_widget(&widgets, (Rectangle){ bwx + 1*dwx, bwy + 1*dwy, ww, wh }, "(G) Class 1 exc.",              generate_izk_class1_exc);
-    add_widget(&widgets, (Rectangle){ bwx + 2*dwx, bwy + 1*dwy, ww, wh }, "(H) Class 2 exc.",              generate_izk_class2_exc);
-    add_widget(&widgets, (Rectangle){ bwx + 3*dwx, bwy + 1*dwy, ww, wh }, "(I) spike latency",             generate_izk_spike_latency);
-    add_widget(&widgets, (Rectangle){ bwx + 4*dwx, bwy + 1*dwy, ww, wh }, "(J) subthresh. osc.",           generate_izk_subthr_osc);
-
-    /* ---------- row 3 ---------- */
-    add_widget(&widgets, (Rectangle){ bwx + 0*dwx, bwy + 2*dwy, ww, wh }, "(K) resonator",                 generate_izk_resonator);
-    add_widget(&widgets, (Rectangle){ bwx + 1*dwx, bwy + 2*dwy, ww, wh }, "(L) integrator",                generate_izk_integrator);
-    add_widget(&widgets, (Rectangle){ bwx + 2*dwx, bwy + 2*dwy, ww, wh }, "(M) rebound spike",             generate_izk_rebound_spike);
-    add_widget(&widgets, (Rectangle){ bwx + 3*dwx, bwy + 2*dwy, ww, wh }, "(N) rebound burst",             generate_izk_rebound_burst);
-    add_widget(&widgets, (Rectangle){ bwx + 4*dwx, bwy + 2*dwy, ww, wh }, "(O) thresh. variability",       generate_izk_thresh_variability);
-
-    /* ---------- row 4 ---------- */
-    add_widget(&widgets, (Rectangle){ bwx + 0*dwx, bwy + 3*dwy, ww, wh }, "(P) bistability",               generate_izk_bistability);
-    add_widget(&widgets, (Rectangle){ bwx + 1*dwx, bwy + 3*dwy, ww, wh }, "(Q) DAP",                       generate_izk_DAP);
-    add_widget(&widgets, (Rectangle){ bwx + 2*dwx, bwy + 3*dwy, ww, wh }, "(R) accomodation",              generate_izk_accomodation);
-    add_widget(&widgets, (Rectangle){ bwx + 3*dwx, bwy + 3*dwy, ww, wh }, "(S) inh. induced sp.",          generate_izk_inh_induced_sp);
-    add_widget(&widgets, (Rectangle){ bwx + 4*dwx, bwy + 3*dwy, ww, wh }, "(T) inh. induced brst.",        generate_izk_inh_induced_brst);
+    add_widget(&widgets, (Rectangle){ 0, 0, 200, 150 }, "Sine & Cosine",  generate_sine_cos);
+    add_widget(&widgets, (Rectangle){ 0, 0, 200, 150 }, "Polynomial",     generate_poly);
+    add_widget(&widgets, (Rectangle){ 0, 0, 200, 150 }, "Damped Osc.",    generate_damped);
+    add_widget(&widgets, (Rectangle){ 0, 0, 200, 150 }, "Trigonometric",  generate_trig);
 
     /* ---------------------------------------------------------------- */
     /*  main loop                                                       */
     /* ---------------------------------------------------------------- */
     int fullscreen_idx = -1;
+    int title_drag_widget_idx = -1;
 
     while (!WindowShouldClose()) {
         Vector2 gpos = GetMousePosition();
@@ -146,6 +118,35 @@ int main(void)
             if (CheckCollisionPointRec(gpos, widgets.items[wi].viewport_px)) {
                 active_wi = wi;
                 break;
+            }
+        }
+
+        /* -------- title bar drag (left-mouse on title area) -------- */
+        bool suppress_left_click = false;
+        if (fullscreen_idx < 0) {
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+                for (int wi = (int)widgets.count - 1; wi >= 0; --wi) {
+                    plot_widget_t *w = &widgets.items[wi];
+                    if (CheckCollisionPointRec(gpos, title_bar_rect(w))) {
+                        w->title_dragging = true;
+                        w->last_mouse = gpos;
+                        title_drag_widget_idx = wi;
+                        suppress_left_click = true;
+                        break;
+                    }
+                }
+            }
+            if (title_drag_widget_idx >= 0 &&
+                IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) {
+                widgets.items[title_drag_widget_idx].title_dragging = false;
+                title_drag_widget_idx = -1;
+            }
+            if (title_drag_widget_idx >= 0) {
+                plot_widget_t *w = &widgets.items[title_drag_widget_idx];
+                Vector2 d = Vector2Subtract(gpos, w->last_mouse);
+                w->viewport_px.x += d.x;
+                w->viewport_px.y += d.y;
+                w->last_mouse = gpos;
             }
         }
 
@@ -166,8 +167,9 @@ int main(void)
                 for (size_t i = 0; i < w->nseries; ++i)
                     draw_series(w, &w->series[i]);
 
-                /* frame / title */
+                /* frame / title / resize handle */
                 draw_widget_frame(w);
+                draw_resize_handle(w);
 
                 /* highlight active widget */
                 if (wi == active_wi)
@@ -238,7 +240,7 @@ int main(void)
                 }
 
                 /* pan/zoom/selection input */
-                handle_input(w, wi);
+                handle_input(w, wi, suppress_left_click);
 
                 /* single-point selection tooltip */
                 Vector2 mpos = GetMousePosition();
@@ -251,7 +253,7 @@ int main(void)
                                               &found_si, &found_pi,
                                               &found_pt, &found_d);
 
-                if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) &&
+                if (!suppress_left_click && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) &&
                     wi == active_wi) {
                     if (CheckCollisionPointRec(mpos, w->viewport_px)) {
                         if (hit) {
@@ -326,6 +328,33 @@ int main(void)
                     auto_fit_view(&widgets.items[fi]);
             }
 
+            /* G : redistribute widgets in a grid, resizing if needed */
+            if (IsKeyPressed(KEY_G) && fullscreen_idx < 0) {
+                int n = (int)widgets.count;
+                if (n > 0) {
+                    int cols = (int)ceil(sqrt(n));
+                    int rows = (int)ceil((double)n / cols);
+                    const int pad = 25;
+                    const int label_w = 45;
+                    const int title_h = 20;
+                    const int label_bot = 15;
+                    const int gap_x = 8, gap_y = 5;
+                    float cell_w = (screenW - 2 * pad - (cols - 1) * gap_x) / cols;
+                    float cell_h = (screenH - 2 * pad - (rows - 1) * gap_y) / rows;
+                    for (int i = 0; i < n; ++i) {
+                        int col = i % cols, row = i / cols;
+                        float cx = pad + col * (cell_w + gap_x);
+                        float cy = pad + row * (cell_h + gap_y);
+                        widgets.items[i].viewport_px = (Rectangle){
+                            cx + label_w,
+                            cy + title_h,
+                            cell_w - label_w,
+                            cell_h - title_h - label_bot
+                        };
+                    }
+                }
+            }
+
             /* TAB : toggle fullscreen on active widget */
             if (IsKeyPressed(KEY_TAB)) {
                 if (fullscreen_idx >= 0) {
@@ -333,6 +362,11 @@ int main(void)
                         widgets.items[fi].viewport_px = widgets.items[fi].saved_viewport;
                     fullscreen_idx = -1;
                 } else if (active_wi >= 0) {
+                    /* cancel any ongoing title drag */
+                    if (title_drag_widget_idx >= 0) {
+                        widgets.items[title_drag_widget_idx].title_dragging = false;
+                        title_drag_widget_idx = -1;
+                    }
                     for (int fi = 0; fi < (int)widgets.count; ++fi)
                         widgets.items[fi].saved_viewport = widgets.items[fi].viewport_px;
                     widgets.items[active_wi].viewport_px = (Rectangle){

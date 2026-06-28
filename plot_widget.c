@@ -187,13 +187,14 @@ void draw_grid_and_ticks(const plot_widget_t *w)
     }
 
     if (w->show_ticks) {
+        int tick_len = 6;
         for (double tx = startx; tx <= w->xmax + 1e-12; tx += xstep) {
             Vector2 p1 = world_to_screen(w, tx, w->ymin);
-            DrawLine((int)p1.x, (int)p1.y, (int)p1.x, (int)p1.y, tick_col);
+            DrawLine((int)p1.x, (int)p1.y, (int)p1.x, (int)p1.y + tick_len, tick_col);
         }
         for (double ty = starty; ty <= w->ymax + 1e-12; ty += ystep) {
             Vector2 p1 = world_to_screen(w, w->xmin, ty);
-            DrawLine((int)p1.x, (int)p1.y, (int)p1.x, (int)p1.y, tick_col);
+            DrawLine((int)p1.x, (int)p1.y, (int)p1.x - tick_len, (int)p1.y, tick_col);
         }
     }
 
@@ -205,7 +206,7 @@ void draw_grid_and_ticks(const plot_widget_t *w)
             snprintf(buf, sizeof(buf), "%.4g", tx);
             float lx = s0.x - MeasureText(buf, 10) / 2.0f;
             DrawText(buf, (int)lx,
-                     (int)(w->viewport_px.y + w->viewport_px.height),
+                     (int)(w->viewport_px.y + w->viewport_px.height) + 3,
                      10, label_col);
         }
         /* y-axis labels */
@@ -213,7 +214,7 @@ void draw_grid_and_ticks(const plot_widget_t *w)
             Vector2 s0 = world_to_screen(w, w->xmin, ty);
             char buf[64];
             snprintf(buf, sizeof(buf), "%.4g", ty);
-            float lx = w->viewport_px.x - MeasureText(buf, 10);
+            float lx = w->viewport_px.x - MeasureText(buf, 10) - 3;
             DrawText(buf, (int)lx, (int)s0.y - 8, 10, label_col);
         }
     }
@@ -254,10 +255,28 @@ void draw_series(const plot_widget_t *w, const series_t *s)
 
 void draw_widget_frame(const plot_widget_t *w)
 {
+    Rectangle tb = title_bar_rect(w);
+    DrawRectangleRec(tb, (Color){245, 245, 245, 16});
+    DrawLineEx(
+        (Vector2){ tb.x, tb.y + tb.height },
+        (Vector2){ tb.x + tb.width, tb.y + tb.height },
+        1.0f, (Color){245, 245, 245, 40});
     int tw = MeasureText(w->title, 12);
     DrawText(w->title,
              (int)(w->viewport_px.x + (w->viewport_px.width - tw) / 2.0),
-             (int)(w->viewport_px.y - 18), 12, LIGHTGRAY);
+             (int)(w->viewport_px.y - 16), 12, LIGHTGRAY);
+}
+
+void draw_resize_handle(const plot_widget_t *w)
+{
+    Rectangle hr = resize_handle_rect(w);
+    float hx = hr.x, hy = hr.y, hs = hr.width;
+    Vector2 p1 = { hx + hs, hy };
+    Vector2 p2 = { hx + hs, hy + hs };
+    Vector2 p3 = { hx,      hy + hs };
+    DrawTriangle(p1, p2, p3, (Color){200, 200, 200, 90});
+    DrawLineEx((Vector2){ hx + hs - 5, hy + 1 }, (Vector2){ hx + hs - 1, hy + 5 }, 1.0f, (Color){180, 180, 180, 120});
+    DrawLineEx((Vector2){ hx + hs - 8, hy + 1 }, (Vector2){ hx + hs - 1, hy + 8 }, 1.0f, (Color){180, 180, 180, 120});
 }
 
 void draw_mouse_tooltip(const plot_widget_t *w, const series_t *series,
@@ -322,7 +341,7 @@ Rectangle draw_legend(const plot_widget_t *w, const series_t *series,
 /*  input handling                                                     */
 /* ------------------------------------------------------------------ */
 
-void handle_input(plot_widget_t *w, int w_idx)
+void handle_input(plot_widget_t *w, int w_idx, bool suppress_left_click)
 {
     Vector2 mpos = GetMousePosition();
     bool inside = CheckCollisionPointRec(mpos, w->viewport_px);
@@ -381,8 +400,26 @@ void handle_input(plot_widget_t *w, int w_idx)
         }
     }
 
+    /* -------- resize (right-mouse drag on bottom-right handle) -------- */
+    if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
+        if (CheckCollisionPointRec(mpos, resize_handle_rect(w))) {
+            w->resizing = true;
+            w->last_mouse = mpos;
+        }
+    }
+    if (IsMouseButtonReleased(MOUSE_BUTTON_RIGHT))
+        w->resizing = false;
+    if (w->resizing) {
+        Vector2 d = Vector2Subtract(mpos, w->last_mouse);
+        w->last_mouse = mpos;
+        float nw = w->viewport_px.width  + d.x;
+        float nh = w->viewport_px.height + d.y;
+        if (nw >= 80) w->viewport_px.width  = nw;
+        if (nh >= 60) w->viewport_px.height = nh;
+    }
+
     /* -------- area selection (left-mouse drag) -------- */
-    if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && inside) {
+    if (!suppress_left_click && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && inside) {
         w->area.active = true;
         w->area.finished = false;
         w->area.widget_idx = w_idx;

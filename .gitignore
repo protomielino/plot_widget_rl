@@ -1,2 +1,3 @@
 *.o
+*.d
 plot_widget_rl

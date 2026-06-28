@@ -1,67 +1,56 @@
 # plot_widget_rl
 
-Interactive 2D plot widget system built with [raylib](https://www.raylib.com/). Provides real-time, zoomable and pannable graphing designed for scientific computing and neural simulation visualization.
+Interactive 2D plot widget system built with [raylib](https://www.raylib.com/).
 
 ## Features
 
-- **Multiple plot widgets** in a single window, each with independent viewport, title, and series
-- **Per-widget input** — only the widget under the mouse cursor (the *active* widget) responds to pan, zoom, click, and key shortcuts; the active widget is highlighted with a yellow border
+- **Multiple plot widgets** in a single window, each with independent viewport, title, and data series
+- **Move widgets** by click+drag on the title bar
+- **Resize widgets** by right-click+drag on the bottom-right corner handle
+- **Redistribute layout** with G key — auto-grids all widgets filling the window
 - **Pan & zoom** via middle-mouse drag and scroll wheel, with axis-lock modifiers (Shift = X only, Ctrl = Y only)
-- **Adaptive grid and ticks** — tick spacing automatically adjusts using "nice" step values (1, 2, 5 × 10^n); labels use compact `%g` formatting
-- **Cursor tooltip** — hover to see world coordinates and nearest point values for every visible series
-- **Point selection** — left-click on any data point to highlight it and display its coordinates; press Q to deselect
-- **Area selection** — left-click drag to select multiple points within a rectangle; highlighted in the viewport
-- **Legend** with per-series visibility toggle (click the series name)
-- **NaN-safe rendering** — gaps in data (NaN/Inf) are skipped gracefully
-- **Clipping** via raylib scissor mode for correct viewport boundaries
+- **Adaptive grid and ticks** — tick spacing auto-adjusts; compact `%g` labels
+- **Cursor tooltip** — hover for world coordinates and nearest point values per series
+- **Point selection** — left-click on a data point to highlight it; Q to deselect
+- **Area selection** — left-click drag to select multiple points in a rectangle
+- **Legend** with per-series visibility toggle
+- **NaN-safe rendering** — gaps in data (NaN/Inf) are skipped
+- **Scissor-clipped** viewports for correct boundaries
 
 ## Controls
 
 | Input | Action |
 |---|---|
+| Left-click drag on title bar | Move widget |
+| Right-click drag on corner handle | Resize widget |
 | Middle-mouse drag | Pan (Shift = X only, Ctrl = Y only) |
 | Scroll wheel | Zoom centered on cursor (Shift = X only, Ctrl = Y only) |
 | Left-click on point | Select / highlight point |
-| Left-click drag | Area selection (multi-point) |
+| Left-click drag on plot | Area selection (multi-point) |
+| G | Redistribute widgets in a grid |
 | Q | Clear selection / cancel area drag |
-| R | Reset pan and zoom on the hovered widget |
-| Tab | Toggle fullscreen on the active widget |
-| f | Zoom-fill: auto-fit view to data on the hovered widget |
-| F (Shift+f) | Zoom-fill all widgets |
+| R | Reset pan and zoom on hovered widget |
+| Tab | Toggle fullscreen on active widget |
+| F | Auto-fit view to data on hovered widget |
+| Shift+F | Auto-fit all widgets |
 
-## Izhikevich Neuron Models
+## Widget data
 
-The project simulates all 20 firing patterns from Izhikevich's 2003 paper
-*"Simple model of spiking neurons"* (IEEE Transactions on Neural Networks).
-Each pattern is displayed in its own widget with three series: injected
-current **I**, membrane potential **V**, and recovery variable **u**.
+Four widgets show simple mathematical functions (256 points each):
 
-Models included: tonic spiking, phasic spiking, tonic bursting, phasic
-bursting, mixed mode, spike frequency adaptation, Class 1/2 excitable,
-spike latency, subthreshold oscillations, resonator, integrator, rebound
-spike/burst, threshold variability, bistability, DAP, accommodation,
-inhibition-induced spiking/bursting.
+- **Sine & Cosine** — sin(x), cos(x), sin(x)·cos(x)
+- **Polynomial** — x²−4, x³/10, x
+- **Damped Osc.** — e⁻ˣ/⁵ sin(x), e⁻ˣ/¹⁰ cos(x), e⁻ˣ/⁷ sin(2x)
+- **Trigonometric** — sin(2x), sin(3x), cos(x)·sin(2x)
 
 ## Dependencies
 
 - [raylib](https://www.raylib.com/) (>= 4.0)
 - C99 compiler (gcc, clang)
 
-## Build
+## Build & Run
 
 ```sh
 make
-```
-
-## Source files
-
-- `main.c` — program entry point, widget setup, main loop
-- `plot_widget.h` / `plot_widget.c` — reusable plot widget types and rendering
-- `izhikevich.h` / `izhikevich.c` — Izhikevich neuron model generators
-```
-
-## Run
-
-```sh
 ./plot_widget_rl
 ```

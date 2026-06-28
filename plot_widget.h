@@ -54,6 +54,8 @@ typedef struct plot_widget_s {
     bool show_labels;
     bool show_legend;
     bool dragging;
+    bool title_dragging;
+    bool resizing;
     Vector2 last_mouse;
     char title[128];
     size_t nseries;
@@ -73,6 +75,26 @@ static inline double lerp(double a, double b, double t) { return a + (b - a) * t
 static inline double clamp_double(double v, double a, double b) { return v < a ? a : (v > b ? b : v); }
 static inline bool mod_shift(void) { return IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT); }
 static inline bool mod_ctrl(void)  { return IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL); }
+
+static inline Rectangle title_bar_rect(const plot_widget_t *w)
+{
+    return (Rectangle){
+        w->viewport_px.x,
+        w->viewport_px.y - 20,
+        w->viewport_px.width,
+        20
+    };
+}
+
+static inline Rectangle resize_handle_rect(const plot_widget_t *w)
+{
+    const float hs = 12;
+    return (Rectangle){
+        w->viewport_px.x + w->viewport_px.width - hs,
+        w->viewport_px.y + w->viewport_px.height - hs,
+        hs, hs
+    };
+}
 
 static inline Rectangle norm_rect_from_points(Vector2 a, Vector2 b)
 {
@@ -94,11 +116,12 @@ void draw_grid_and_ticks(const plot_widget_t *w);
 void draw_curve(const plot_widget_t *w, const pointD *pts, size_t n, Color color);
 void draw_series(const plot_widget_t *w, const series_t *s);
 void draw_widget_frame(const plot_widget_t *w);
+void draw_resize_handle(const plot_widget_t *w);
 void draw_mouse_tooltip(const plot_widget_t *w, const series_t *series, size_t nseries, Vector2 mouse);
 Rectangle draw_legend(const plot_widget_t *w, const series_t *series, size_t nseries);
 
 /* input */
-void handle_input(plot_widget_t *w, int w_idx);
+void handle_input(plot_widget_t *w, int w_idx, bool suppress_left_click);
 void handle_legend_input(plot_widget_t *w, series_t *series, size_t nseries, Rectangle legend_box);
 
 /* helpers */
